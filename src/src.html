@@ -320,6 +320,15 @@
             min-height: 200px;
             margin-bottom: 15px;
         }
+        /* Текстовые вкладки */
+        .text-body { padding: 8px 4px; }
+        .para-row { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+        .para { flex: 1; padding: 6px 8px; border-radius: 6px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; min-height: 1.55em; }
+        .para.editable { background: #fafafa; border: 1px dashed #d1d5db; }
+        .para.editable:focus { outline: 2px solid var(--accent); background: #fff; }
+        .para-tools { display: flex; gap: 4px; flex-shrink: 0; }
+        .para-tools button { border: 1px solid #d1d5db; background: #fff; border-radius: 4px; cursor: pointer; padding: 2px 7px; font-size: 13px; }
+
         /* Уровни доступа */
         .lvl-th, .lvl-cell { width: 44px; min-width: 44px; padding: 2px !important; text-align: center; background: #f1f3f5 !important; }
         .lvl-select { padding: 2px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; background: #fff; }
@@ -762,10 +771,7 @@
         </div>
 
         <!-- Управление вкладками -->
-        <div class="tabs-container" style="padding: 20px 20px 0 20px; max-width: 1400px; margin: 0 auto;">
-            <button class="btn tab-btn active" data-tab="main">Основная</button>
-            <button class="btn tab-btn" data-tab="secondary">Вторая вкладка</button>
-            <button class="btn tab-btn" data-tab="files">📁 Файлы</button>
+        <div class="tabs-container" style="padding: 20px 20px 0 20px; max-width: 1400px; margin: 0 auto; display:flex; gap:8px; flex-wrap:wrap;">
         </div>
 
         <!-- Контейнер с таблицами -->
@@ -869,6 +875,32 @@
                 <button onclick="app._exitSave()" style="padding:10px 20px;border:none;border-radius:8px;background:#28a745;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">💾 Сохранить</button>
                 <button onclick="app._exitDiscard()" style="padding:10px 20px;border:2px solid #dc3545;border-radius:8px;background:#fff;color:#dc3545;cursor:pointer;font-size:14px;font-weight:600;">Выйти без сохранения</button>
                 <button onclick="app._exitCancel()" style="padding:10px 20px;border:2px solid #ccc;border-radius:8px;background:#fff;color:#666;cursor:pointer;font-size:14px;">Остаться</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Новая вкладка -->
+    <div class="modal" id="tab-modal">
+        <div class="modal-content" style="max-width:420px;">
+            <div class="modal-header">➕ Новая вкладка</div>
+            <div class="modal-body">
+                <input type="text" id="tab-name-input" maxlength="40" placeholder="Название вкладки" autocomplete="off" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+                <div style="margin:12px 0 4px;font-size:13px;color:#555;">Что внутри:</div>
+                <select id="tab-type-select" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;">
+                    <option value="table">Таблица</option>
+                    <option value="text">Текст (абзацы)</option>
+                </select>
+                <div style="margin:12px 0 4px;font-size:13px;color:#555;">Кто видит вкладку:</div>
+                <select id="tab-lvl-select" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;">
+                    <option value="1">1 · только админ</option>
+                    <option value="2">2 · уровни 1–2</option>
+                    <option value="3">3 · уровни 1–3</option>
+                    <option value="4" selected>4 · все</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="app.closeTabModal()">Отмена</button>
+                <button class="btn btn-success" onclick="app.createTabFromModal()">Создать</button>
             </div>
         </div>
     </div>
@@ -1217,7 +1249,13 @@
           let native = null, forceJS = false;
           try { native = (G.crypto && G.crypto.subtle) || null; } catch (e) {}
           const ITER = 200000;
-          const SECTIONS = ['section_a', 'section_b'];
+          // id вкладки попадает в разметку и обработчики — допускаем только безопасные символы
+          const validId = id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(id);
+          const secIds = function () {
+            const s = new Set();
+            for (let i = 0; i < arguments.length; i++) { const o = arguments[i]; if (o && typeof o === 'object') Object.keys(o).forEach(k => { if (validId(k)) s.add(k); }); }
+            return Array.from(s);
+          };
 
           const isJS = k => !!(k && k.w && k.T);
           const useNative = () => !!native && !forceJS;
@@ -1348,7 +1386,7 @@
           function splitTables(tables, minLevel) {
             minLevel = minLevel || 1;
             const parts = { 1: { tabs: {} }, 2: { tabs: {} }, 3: { tabs: {} }, 4: { tabs: {} } };
-            SECTIONS.forEach(sec => {
+            secIds(tables).forEach(sec => {
               const t = tables[sec];
               if (!t) return;
               const tl = Math.max(minLevel, clampLvl(t.meta && t.meta.lvl));
@@ -1363,8 +1401,9 @@
           }
 
           function mergeParts(parts) {
-            const out = {};
-            SECTIONS.forEach(sec => {
+            const out = {}, ids = new Set();
+            Object.keys(parts).forEach(k => { const tabs = parts[k] && parts[k].tabs; if (tabs) secIds(tabs).forEach(s => ids.add(s)); });
+            ids.forEach(sec => {
               let head = null, rows = [];
               Object.keys(parts).forEach(k => {
                 const tab = parts[k] && parts[k].tabs && parts[k].tabs[sec];
@@ -1405,10 +1444,10 @@
           // base/mine/remote: { section_x: {meta, columns, rows} }. Возвращает { tables, conflicts }
           function mergeTables(base, mine, remote) {
             const out = {}; let conflicts = 0;
-            SECTIONS.forEach(sec => {
+            secIds(base, mine, remote).forEach(sec => {
               const B = base && base[sec], M = mine[sec], R = remote[sec];
-              if (!M) { if (R) out[sec] = R; return; }
-              if (!R) return;
+              if (!M) { if (R && !B) out[sec] = R; return; }   // чужая новая вкладка — берём; удалённую мной — не воскрешаем
+              if (!R) { if (!B) out[sec] = M; return; }          // моя новая вкладка — оставляем; удалена на сервере — убираем
               const metaSig = x => JSON.stringify(Object.assign({}, x || {}, { updated: undefined }));
               const meta = (B && metaSig(M.meta) === metaSig(B.meta)) ? R.meta : M.meta;
               const columns = (B && JSON.stringify(M.columns) === JSON.stringify(B.columns)) ? R.columns : M.columns;
@@ -1443,7 +1482,7 @@
             return { tables: out, conflicts: conflicts };
           }
 
-          return { ITER, SECTIONS, mergeTables, clampLvl, newKeys, seal, sealPart, openSlot, readParts,
+          return { ITER, validId, secIds, mergeTables, clampLvl, newKeys, seal, sealPart, openSlot, readParts,
                    normalizeRows, assignOrder, splitTables, mergeParts,
                    _forceJS: v => { forceJS = !!v; }, _hasNative: () => !!native,
                    _raw: { derive: deriveW, enc: rawEnc, dec: rawDec, rnd: rnd } };
@@ -1639,7 +1678,7 @@
                     catch (e) { this.showToast('Эта версия зашифрована прежними паролями — открыть её нельзя', 'error'); return; }
                     const t = Vault.mergeParts(parts);
                     let n = 0;
-                    Vault.SECTIONS.forEach(sec => {
+                    Vault.secIds(t).forEach(sec => {
                         if (!t[sec] || !this.canEdit(sec)) return;
                         this.saveToHistory(sec);
                         t[sec].meta.updated = new Date().toISOString();
@@ -1666,8 +1705,7 @@
 
             _exitDiscard() {
                 // Снимаем флаги несохранённых изменений и позволяем уйти
-                this.state.unsavedChanges.section_a = false;
-                this.state.unsavedChanges.section_b = false;
+                this.state.unsavedChanges = {};
                 document.getElementById('exit-modal').style.display = 'none';
                 // На Android — идём "назад" без блокировки
                 history.back();
@@ -1720,22 +1758,13 @@
                 baseTables: null,          // видимые таблицы на момент загрузки/сохранения (основа для слияния)
                 files: { pw: null, cache: null, list: null, sha: null, busy: false, exists: null, probing: false, error: null },
                 vault: { file: null, sha: null, baseParts: {} },
-                activeTab: 'main',         // 'main' или 'secondary'
+                activeTab: 'section_a',    // id вкладки или 'files'
                 selectedCell: null,        // Выбранная ячейка
                 selectedCells: [],         // Множественный выбор ячеек { section, row, col }
                 clipboard: null,           // Скопированные ячейки
-                tables: {
-                    section_a: null,       // Данные таблицы А
-                    section_b: null        // Данные таблицы Б
-                },
-                history: {
-                    section_a: { states: [], currentIndex: -1 },
-                    section_b: { states: [], currentIndex: -1 }
-                },
-                unsavedChanges: {
-                    section_a: false,
-                    section_b: false
-                },
+                tables: {},                // id вкладки → данные (вкладки создаются динамически)
+                history: {},
+                unsavedChanges: {},
                 baseStamp: {},
                 githubSHA: {
                     file: null,
@@ -1875,7 +1904,7 @@
                 st.vault = { file: remote.obj, sha: remote.sha, baseParts: {} };
                 st.rekey = null; st.clipboard = null; st.selectedCell = null; st.selectedCells = [];
                 st.files = this._newFilesState();
-                st.history = { section_a: { states: [], currentIndex: -1 }, section_b: { states: [], currentIndex: -1 } };
+                st.history = {};
                 await this._assemble(remote.obj);
                 this._idleStart();
                 try { localStorage.setItem('uhabr_theme_level', String(level)); } catch (e) {}
@@ -1895,7 +1924,7 @@
                 Object.keys(this.state.keys).forEach(k => { base[k] = JSON.stringify((obj.parts && obj.parts[k]) || null); });
                 this.state.vault.baseParts = base;
                 const t = Vault.mergeParts(parts);
-                Vault.SECTIONS.forEach(sec => { this.state.tables[sec] = t[sec] || null; this.state.unsavedChanges[sec] = false; });
+                this.state.tables = t; this.state.unsavedChanges = {}; this.state.history = {};
                 this.state.baseTables = JSON.parse(JSON.stringify(this.state.tables));
             },
 
@@ -1909,9 +1938,9 @@
                 const st = this.state;
                 st.currentMode = null; st.level = null; st.keys = null; st.editing = false; st.rekey = null;
                 st.vault = { file: null, sha: null, baseParts: {} };
-                st.tables = { section_a: null, section_b: null };
-                st.unsavedChanges = { section_a: false, section_b: false };
-                st.history = { section_a: { states: [], currentIndex: -1 }, section_b: { states: [], currentIndex: -1 } };
+                st.tables = {}; st.activeTab = 'section_a';
+                st.unsavedChanges = {};
+                st.history = {};
                 st.selectedCell = null; st.selectedCells = []; st.clipboard = null; st.clipboardSig = null;
                 st.files = this._newFilesState(); st.baseTables = null;
                 this.updateMultiSelectUI();
@@ -1923,9 +1952,256 @@
                 document.getElementById('login-error').style.display = 'none';
             },
 
+            // ==================== ВКЛАДКИ: СОЗДАНИЕ, ИМЯ, ТЕКСТ ====================
+            _hist(section) { return this.state.history[section] || (this.state.history[section] = { states: [], currentIndex: -1 }); },
+            _esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); },
+            // Ссылки в ячейках: только http(s), mailto, tel (никаких javascript:)
+            _safeUrl(u) {
+                u = String(u || '').trim();
+                if (!u) return null;
+                if (/^(https?:|mailto:|tel:)/i.test(u)) return u;
+                if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return null;
+                return 'https://' + u;
+            },
+            _tabPos(id) { const m = (this.state.tables[id] || {}).meta || {}; return typeof m.pos === 'number' ? m.pos : (id === 'section_a' ? 0 : id === 'section_b' ? 1 : 1000); },
+            _tabOrder() {
+                const t = this.state.tables;
+                return Object.keys(t).filter(id => t[id] && Vault.validId(id)).sort((a, b) => (this._tabPos(a) - this._tabPos(b)) || a.localeCompare(b));
+            },
+            _tabLabel(id) {
+                const t = this.state.tables[id];
+                if (!t) return id;
+                const m = t.meta || {};
+                return m.tab || (id === 'section_a' ? 'Основная' : id === 'section_b' ? 'Вторая вкладка' : (m.title || id));
+            },
+            _activeSection() {
+                const st = this.state;
+                return st.tables[st.activeTab] ? st.activeTab : (this._tabOrder()[0] || null);
+            },
+            _isTableTab() { const t = this.state.tables[this.state.activeTab]; return !!t && (t.meta.type || 'table') === 'table'; },
+            _hex(n) { return Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.toString(16).padStart(2, '0')).join(''); },
+
+            openTabModal() {
+                if (this.state.level !== 1 || !this.state.editing) return;
+                document.getElementById('tab-name-input').value = '';
+                document.getElementById('tab-type-select').value = 'table';
+                document.getElementById('tab-lvl-select').value = '4';
+                document.getElementById('tab-modal').classList.add('show');
+                setTimeout(() => { const i = document.getElementById('tab-name-input'); if (i) i.focus(); }, 50);
+            },
+            closeTabModal() { document.getElementById('tab-modal').classList.remove('show'); },
+            createTabFromModal() {
+                const name = document.getElementById('tab-name-input').value.trim().slice(0, 40);
+                if (!name) { this.showToast('Введите название вкладки', 'error'); return; }
+                const type = document.getElementById('tab-type-select').value === 'text' ? 'text' : 'table';
+                this._addTab(name, type, Vault.clampLvl(document.getElementById('tab-lvl-select').value));
+                this.closeTabModal();
+            },
+            _addTab(name, type, lvl) {
+                const st = this.state;
+                if (st.level !== 1) return null;
+                let id; do { id = 'tab_' + this._hex(3); } while (st.tables[id]);
+                const order = this._tabOrder();
+                const pos = order.length ? Math.max(...order.map(i => this._tabPos(i))) + 1 : 0;
+                let t;
+                if (type === 'text') {
+                    t = { meta: { version: '1.0', title: name, updated: new Date().toISOString() },
+                          columns: [{ id: 'col_1', width: 'wide' }],
+                          rows: [{ id: 'p_' + this._hex(4), isDivider: false, collapsed: false, lvl: 4, cells: [{ text: '', bold: false, align: 'left', fontSize: 'normal', bgColor: 'none', link: null }] }] };
+                } else {
+                    t = this.createEmptyTable(name, 'tab');
+                    t.rows.forEach(r => { r.lvl = 4; });
+                }
+                Object.assign(t.meta, { tab: name, lvl: lvl, pos: pos, type: type });
+                Vault.assignOrder(t.rows, true);
+                st.tables[id] = t; st.unsavedChanges[id] = true; st.activeTab = id;
+                this.updateUnsavedIndicator(); this.updateTabsVisibility(); this.renderTables();
+                this.showToast(`Вкладка «${name}» создана. Нажмите «Сохранить»`, 'success');
+                return id;
+            },
+            renameTab(section, value) {
+                const t = this.state.tables[section], v = String(value || '').trim().slice(0, 40);
+                if (!t || this.state.level !== 1 || !this.canEdit(section)) return;
+                if (!v) { this.showToast('Название не может быть пустым', 'error'); this.renderTables(); return; }
+                if (v === this._tabLabel(section)) return;
+                this.saveToHistory(section);
+                t.meta.tab = v; t.meta.updated = new Date().toISOString();
+                this.saveChanges(section);
+                this.updateTabsVisibility();
+            },
+            async deleteTab(section) {
+                const t = this.state.tables[section];
+                if (!t || this.state.level !== 1 || !this.canEdit(section)) return;
+                if (!await this._confirmDialog(`Удалить вкладку «${this._tabLabel(section)}» со всем содержимым?`)) return;
+                delete this.state.tables[section]; delete this.state.history[section];
+                this.state.unsavedChanges[section] = true;
+                this.state.selectedCell = null;
+                this.state.selectedCells = this.state.selectedCells.filter(c => c.section !== section);
+                this.updateUnsavedIndicator(); this.updateTabsVisibility(); this.renderTables();
+                this.showToast('Вкладка удалена. Нажмите «Сохранить», чтобы применить', 'info');
+            },
+
+            // Строка управления вкладкой: название, видимость, удаление
+            _tabControls(sectionId, data) {
+                const lv = document.createElement('div');
+                lv.style.cssText = 'margin:6px 0 2px;font-size:13px;color:#555;display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
+                const isText = (data.meta.type || 'table') === 'text';
+                if (this.state.level === 1) {
+                    const lb0 = document.createElement('span'); lb0.textContent = '✏️ Название вкладки:';
+                    const nm = document.createElement('input');
+                    nm.type = 'text'; nm.maxLength = 40; nm.value = this._tabLabel(sectionId); nm.placeholder = 'Название';
+                    nm.style.cssText = 'padding:3px 6px;border:1px solid #ced4da;border-radius:4px;min-width:130px;';
+                    nm.onchange = () => this.renameTab(sectionId, nm.value);
+                    lv.appendChild(lb0); lv.appendChild(nm);
+                }
+                const lb = document.createElement('span'); lb.textContent = '🔒 Вкладку видят уровни до:';
+                lv.appendChild(lb);
+                lv.appendChild(this._levelSelect(data.meta.lvl, (v) => this.setTabLevel(sectionId, v)));
+                if (this.state.level === 1) {
+                    const del = document.createElement('button');
+                    del.className = 'btn btn-secondary'; del.textContent = '🗑 Удалить вкладку';
+                    del.onclick = () => this.deleteTab(sectionId);
+                    lv.appendChild(del);
+                }
+                const hint = document.createElement('span'); hint.style.cssText = 'font-size:12px;color:#888;';
+                hint.textContent = '1 — только админ · 2 — до наполнения · 3 — до просмотра · 4 — все. Левый столбец — уровень ' + (isText ? 'абзаца.' : 'строки.');
+                lv.appendChild(hint);
+                return lv;
+            },
+
+            _elText(el) { return (el.innerText !== undefined ? el.innerText : el.textContent).replace(/\r/g, '').replace(/\n+$/, ''); },
+            _paraCommit(section, rid, el) {
+                const t = this.state.tables[section];
+                if (!t || !this.canEdit(section)) return;
+                const row = t.rows.find(r => r.id === rid);
+                if (!row) return;
+                const text = this._elText(el);
+                if (text === (row.cells[0].text || '')) return;
+                this.saveToHistory(section);
+                row.cells[0].text = text;
+                t.meta.updated = new Date().toISOString();
+                this.saveChanges(section);
+            },
+            addParagraph(section, afterIndex) {
+                const t = this.state.tables[section];
+                if (!t || !this.canEdit(section)) return;
+                this.saveToHistory(section);
+                const ref = t.rows[afterIndex];
+                const id = 'p_' + this._hex(4);
+                t.rows.splice(afterIndex + 1, 0, { id: id, isDivider: false, collapsed: false, lvl: Math.max(this.state.level, Vault.clampLvl(ref && ref.lvl)),
+                    cells: [{ text: '', bold: false, align: 'left', fontSize: 'normal', bgColor: 'none', link: null }] });
+                t.meta.updated = new Date().toISOString();
+                this.saveChanges(section);
+                this._focusPara = id;
+                this.renderTables();
+            },
+            deleteParagraph(section, rid) {
+                const t = this.state.tables[section];
+                if (!t || !this.canEdit(section)) return;
+                const i = t.rows.findIndex(r => r.id === rid);
+                if (i < 0) return;
+                this.saveToHistory(section);
+                if (t.rows.length === 1) { t.rows[0].cells[0].text = ''; } else { t.rows.splice(i, 1); }
+                t.meta.updated = new Date().toISOString();
+                this.saveChanges(section);
+                this.renderTables();
+            },
+            toggleHeading(section, rid) {
+                const t = this.state.tables[section];
+                if (!t || !this.canEdit(section)) return;
+                const row = t.rows.find(r => r.id === rid);
+                if (!row) return;
+                this.saveToHistory(section);
+                const c = row.cells[0], head = c.bold && c.fontSize === 'large';
+                c.bold = !head; c.fontSize = head ? 'normal' : 'large';
+                t.meta.updated = new Date().toISOString();
+                this.saveChanges(section);
+                this.renderTables();
+            },
+
+            // Текстовая вкладка: абзацы — это строки с тем же механизмом уровней, порядка и слияния
+            _renderTextTab(sectionId, data) {
+                const isEditable = this.canEdit(sectionId);
+                const root = document.createElement('div');
+                root.className = 'table-section'; root.dataset.section = sectionId;
+                const header = document.createElement('div'); header.className = 'table-header';
+                const tc = document.createElement('div'); tc.className = 'table-title-container';
+                const title = document.createElement('div');
+                title.className = 'table-title' + (isEditable ? ' editable' : '');
+                title.contentEditable = String(isEditable);
+                title.textContent = data.meta.title || this._tabLabel(sectionId);
+                title.addEventListener('blur', () => this.updateTableTitle(title, sectionId));
+                const lock = document.createElement('span'); lock.className = 'lock-icon'; lock.textContent = isEditable ? '✏️' : '🔒';
+                tc.appendChild(title); tc.appendChild(lock);
+                const meta = document.createElement('div'); meta.className = 'table-meta'; meta.textContent = 'Обновлено: ' + this.formatDate(data.meta.updated);
+                header.appendChild(tc); header.appendChild(meta); root.appendChild(header);
+                if (isEditable) root.appendChild(this._tabControls(sectionId, data));
+
+                const body = document.createElement('div'); body.className = 'text-body';
+                let prevLvl = 4;
+                data.rows.forEach((row, ri) => {
+                    const cell = (row.cells && row.cells[0]) || (row.cells = [{ text: '', bold: false, align: 'left', fontSize: 'normal', bgColor: 'none', link: null }])[0];
+                    const wrap = document.createElement('div'); wrap.className = 'para-row';
+                    if (isEditable) {
+                        if (row.lvl === undefined || row.lvl === null) row.lvl = prevLvl;
+                        prevLvl = Vault.clampLvl(row.lvl);
+                        wrap.appendChild(this._levelSelect(row.lvl, (v) => this.setRowLevel(sectionId, ri, v)));
+                    }
+                    const p = document.createElement('div');
+                    p.className = 'para' + (isEditable ? ' editable' : '');
+                    p.dataset.pid = row.id;
+                    p.textContent = cell.text || '';
+                    p.style.fontWeight = cell.bold ? '700' : '400';
+                    p.style.fontSize = ({ small: '0.85em', large: '1.35em' })[cell.fontSize] || '1em';
+                    p.style.textAlign = ['left', 'center', 'right'].includes(cell.align) ? cell.align : 'left';
+                    if (isEditable) {
+                        p.contentEditable = 'true';
+                        const rid = row.id;
+                        p.addEventListener('blur', () => this._paraCommit(sectionId, rid, p));
+                        p.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {   // Enter — новый абзац, Shift+Enter — перенос строки
+                                e.preventDefault();
+                                this._paraCommit(sectionId, rid, p);
+                                this.addParagraph(sectionId, data.rows.findIndex(r => r.id === rid));
+                            }
+                        });
+                        p.addEventListener('paste', (e) => {      // вставляем только текст, без чужой разметки
+                            e.preventDefault();
+                            const txt = ((e.clipboardData || window.clipboardData).getData('text')) || '';
+                            document.execCommand('insertText', false, txt);
+                        });
+                    }
+                    wrap.appendChild(p);
+                    if (isEditable) {
+                        const tools = document.createElement('div'); tools.className = 'para-tools';
+                        const mkb = (txt, title, fn) => { const b = document.createElement('button'); b.textContent = txt; b.title = title; b.onclick = fn; tools.appendChild(b); };
+                        mkb('Aa', 'Заголовок / обычный текст', () => this.toggleHeading(sectionId, row.id));
+                        mkb('＋', 'Добавить абзац ниже', () => this.addParagraph(sectionId, data.rows.findIndex(r => r.id === row.id)));
+                        mkb('✕', 'Удалить абзац', () => this.deleteParagraph(sectionId, row.id));
+                        wrap.appendChild(tools);
+                    }
+                    body.appendChild(wrap);
+                });
+                root.appendChild(body);
+                if (isEditable && !data.rows.length) {
+                    const b = document.createElement('button'); b.className = 'btn btn-secondary'; b.textContent = '➕ Добавить абзац';
+                    b.onclick = () => this.addParagraph(sectionId, -1);
+                    root.appendChild(b);
+                }
+                return root;
+            },
+
             // ==================== ЦВЕТ ПО УРОВНЮ ДОСТУПА ====================
             // 0 — устройство ещё не входило; цвет уровня запоминается на устройстве и виден уже на экране входа
             _themes: { 0: ['#6b7280', '#4b5563'], 1: ['#374151', '#1f2937'], 2: ['#2f855a', '#276749'], 3: ['#2b6cb0', '#0987a0'], 4: ['#6b46c1', '#553c9a'] },
+            _rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; },
+            _badge(l) {
+                const s = document.createElement('span');
+                s.textContent = l; s.title = 'Уровень ' + l;
+                s.style.cssText = `display:inline-block;min-width:18px;text-align:center;padding:0 6px;margin-right:3px;border-radius:10px;color:#fff;font-weight:600;background:${this._themes[l][0]};`;
+                return s;
+            },
+            _tint(tr, l) { tr.style.background = this._rgba(this._themes[l][0], 0.13); },
             _applyTheme(level) {
                 const t = (CONFIG.LEVEL_COLORS && this._themes[level]) || this._themes[0];
                 document.documentElement.style.setProperty('--accent', t[0]);
@@ -1976,7 +2252,7 @@
                 try {
                     // чтобы не потерять правки, пробуем сохранить их перед выходом
                     if (this.hasUnsavedChanges() && this.state.level <= 2) {
-                        await this.sendToGitHub(this.state.activeTab === 'main' ? 'section_a' : 'section_b').catch(() => {});
+                        await this.sendToGitHub((this._activeSection() || 'section_a')).catch(() => {});
                     }
                     if (this.hasUnsavedChanges()) {
                         this._lastActive = Date.now();
@@ -2089,14 +2365,14 @@
                 const ago = iso => { const d = Math.floor((now - Date.parse(iso)) / DAY); return d <= 0 ? 'сегодня' : d === 1 ? 'вчера' : `${d} дн. назад`; };
                 const mk = (tag, text, css) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (css) e.style.cssText = css; return e; };
                 const cell = 'border-bottom:1px solid #eee;padding:3px 6px;text-align:left;white-space:nowrap;';
-                const addRow = (tbl, vals, head) => { const tr = mk('tr'); vals.forEach(v => tr.appendChild(mk(head ? 'th' : 'td', String(v), cell))); tbl.appendChild(tr); return tr; };
+                const addRow = (tbl, vals, head) => { const tr = mk('tr'); vals.forEach(v => { const td = mk(head ? 'th' : 'td', v instanceof Node ? undefined : String(v), cell); if (v instanceof Node) td.appendChild(v); tr.appendChild(td); }); tbl.appendChild(tr); return tr; };
 
                 // по уровням (все записи)
                 const lv = {}; [1, 2, 3, 4].forEach(l => { lv[l] = { n: 0, n30: 0, dev: new Set(), last: '' }; });
                 rows.forEach(r => { const s = lv[r.lvl]; s.n++; if (now - Date.parse(r.iso) < 30 * DAY) s.n30++; s.dev.add(r.dev); if (r.iso > s.last) s.last = r.iso; });
                 const t1 = mk('table', undefined, 'width:100%;border-collapse:collapse;');
                 addRow(t1, ['Уровень', 'Всего', '30 дн.', 'Устройств', 'Последний вход'], true);
-                [1, 2, 3, 4].forEach(l => addRow(t1, [l, lv[l].n, lv[l].n30, lv[l].dev.size, lv[l].last ? this.formatDate(lv[l].last) + ' (' + ago(lv[l].last) + ')' : '—']));
+                [1, 2, 3, 4].forEach(l => { const tr = addRow(t1, [this._badge(l), lv[l].n, lv[l].n30, lv[l].dev.size, lv[l].last ? this.formatDate(lv[l].last) + ' (' + ago(lv[l].last) + ')' : '—']); this._tint(tr, l); });
                 const w1 = mk('div', undefined, 'overflow-x:auto;'); w1.appendChild(t1); box.appendChild(w1);
 
                 // часовые пояса: интересны только отклонения
@@ -2113,7 +2389,8 @@
                 [[0, 'Все уровни'], [1, 'Уровень 1'], [2, 'Уровень 2'], [3, 'Уровень 3'], [4, 'Уровень 4']].forEach(([v, t]) => { const o = mk('option', t); o.value = v; if (v === (this._logLevel || 0)) o.selected = true; sel.appendChild(o); });
                 sel.onchange = () => { this._logLevel = +sel.value; this._renderLogView(); };
                 bar.appendChild(sel);
-                bar.appendChild(mk('span', 'нажмите на заголовок, чтобы отсортировать', 'color:#888;'));
+                bar.appendChild(mk('span', 'нажмите на заголовок, чтобы отсортировать. Цвета уровней:', 'color:#888;'));
+                [1, 2, 3, 4].forEach(l => bar.appendChild(this._badge(l)));
                 box.appendChild(bar);
 
                 // устройства
@@ -2145,17 +2422,18 @@
                 t2.appendChild(hr);
                 devs.forEach(d => {
                     const odd = zones.length > 1 && d.zone && d.zone !== mainZone;
-                    const tr = addRow(t2, [d.dev + (odd ? ' ⚠' : ''), [...d.lvls].sort().join(','), d.n, d.n30, d.wk.toFixed(1),
+                    const tr = addRow(t2, [d.dev + (odd ? ' ⚠' : ''), (() => { const s = document.createElement('span'); [...d.lvls].sort().forEach(l => s.appendChild(this._badge(l))); return s; })(), d.n, d.n30, d.wk.toFixed(1),
                         this.formatDate(d.last) + ' (' + ago(d.last) + ')', d.plat + (d.lang ? ' · ' + d.lang : '')]);
                     tr.title = `Первый вход: ${this.formatDate(d.first)}${d.zone ? '; пояс: ' + d.zone : ''}`;
-                    if (odd) tr.style.background = '#fff7ed';
+                    this._tint(tr, d.minLvl);
+                    if (odd) tr.style.boxShadow = 'inset 4px 0 0 #f59e0b';
                 });
                 const w2 = mk('div', undefined, 'overflow-x:auto;'); w2.appendChild(t2); box.appendChild(w2);
 
                 // последние входы
                 box.appendChild(mk('div', 'Последние входы', 'margin:10px 0 2px;font-weight:600;'));
                 const t3 = mk('table', undefined, 'width:100%;border-collapse:collapse;');
-                rows.slice().sort((a, b) => b.iso.localeCompare(a.iso)).slice(0, 10).forEach(r => addRow(t3, [this.formatDate(r.iso), 'ур. ' + r.lvl, 'устр. ' + r.dev]));
+                rows.slice().sort((a, b) => b.iso.localeCompare(a.iso)).slice(0, 10).forEach(r => { const tr = addRow(t3, [this.formatDate(r.iso), this._badge(r.lvl), 'устр. ' + r.dev]); this._tint(tr, r.lvl); });
                 box.appendChild(t3);
                 if (this._logTruncated) box.appendChild(mk('div', 'Показаны первые 1000 записей — очистите журнал.', 'color:#b45309;margin-top:6px;'));
             },
@@ -2181,7 +2459,7 @@
                     this.showToast('Шифрование копии…', 'info');
                     await new Promise(r => setTimeout(r, 30));
                     const tables = {};
-                    Vault.SECTIONS.forEach(sec => { if (this.state.tables[sec]) tables[sec] = this.state.tables[sec]; });
+                    Object.keys(this.state.tables).forEach(sec => { if (this.state.tables[sec]) tables[sec] = this.state.tables[sec]; });
                     const data = new TextEncoder().encode(JSON.stringify({ app: CONFIG.APP_NAME, kind: 'backup', created: new Date().toISOString(), tables: tables }));
                     const out = await Hvx.encrypt(pw, [{ name: 'backup.json', type: 'application/json', data: data }]);
                     this._saveBlob(new Blob([out.bytes], { type: 'application/octet-stream' }), `${CONFIG.APP_NAME.toLowerCase()}-backup-${new Date().toISOString().slice(0, 10)}.hvx`);
@@ -2198,8 +2476,8 @@
                     const j = JSON.parse(new TextDecoder().decode(r.files[0].data));
                     if (j.kind !== 'backup' || !j.tables) throw new Error('это не резервная копия');
                     let n = 0;
-                    Vault.SECTIONS.forEach(sec => {
-                        if (!j.tables[sec] || !this.canEdit(sec)) return;
+                    Vault.secIds(j.tables).forEach(sec => {
+                        if (!j.tables[sec]) return;
                         this.saveToHistory(sec);
                         this.state.tables[sec] = j.tables[sec];
                         this.state.unsavedChanges[sec] = true; n++;
@@ -2415,6 +2693,7 @@
                 if (!on) { this.state.selectedCell = null; this.state.selectedCells = []; }
                 this._updateEditToggle();
                 this.updateModeIndicator();
+                this.updateTabsVisibility();
                 this.renderTables();
             },
             _updateEditToggle() {
@@ -2429,17 +2708,28 @@
                 if (this.state.editing) { el.textContent = `✏️ Редактирование · уровень ${this.state.level}`; el.className = 'mode-indicator mode-admin-a'; }
                 else { el.textContent = `👁️ Просмотр · уровень ${this.state.level}`; el.className = 'mode-indicator mode-view'; }
             },
+            // Панель вкладок строится из данных: виден только то, что доступно уровню
             updateTabsVisibility() {
-                const map = { main: 'section_a', secondary: 'section_b' };
-                const visible = tab => tab === 'files' || !!this.state.tables[map[tab]];
-                let first = null;
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    const vis = visible(btn.dataset.tab);
-                    btn.style.display = vis ? '' : 'none';
-                    if (vis && !first) first = btn.dataset.tab;
-                });
-                if (!visible(this.state.activeTab) && first) this.state.activeTab = first;
-                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === this.state.activeTab));
+                const bar = document.querySelector('.tabs-container');
+                if (!bar) return;
+                const ids = this._tabOrder();
+                if (this.state.activeTab !== 'files' && !this.state.tables[this.state.activeTab]) this.state.activeTab = ids[0] || 'files';
+                bar.textContent = '';
+                const add = (id, label) => {
+                    const b = document.createElement('button');
+                    b.className = 'btn tab-btn' + (id === this.state.activeTab ? ' active' : '');
+                    b.dataset.tab = id; b.textContent = label;
+                    b.onclick = () => this.switchTab(id);
+                    bar.appendChild(b);
+                };
+                ids.forEach(id => add(id, this._tabLabel(id)));
+                add('files', '📁 Файлы');
+                if (this.state.level === 1 && this.state.editing) {
+                    const b = document.createElement('button');
+                    b.className = 'btn btn-secondary'; b.id = 'add-tab-btn'; b.textContent = '＋ Вкладка';
+                    b.onclick = () => this.openTabModal();
+                    bar.appendChild(b);
+                }
             },
 
             _levelSelect(current, onChange) {
@@ -2522,7 +2812,7 @@
                     } else {
                         this.closeAccess();
                         this.state.rekey = { passwords: pw, keysRaw: Vault.newKeys() };
-                        await this.sendToGitHub(this.state.activeTab === 'main' ? 'section_a' : 'section_b');
+                        await this.sendToGitHub((this._activeSection() || 'section_a'));
                     }
                 } catch (e) {
                     this.showToast('Ошибка: ' + e.message, 'error');
@@ -2535,6 +2825,8 @@
                     return t;
                 };
                 const tables = { section_a: mk('Расписание отдела А', 'admin_a'), section_b: mk('Расписание отдела Б', 'admin_b') };
+                tables.section_a.meta.tab = 'Основная'; tables.section_a.meta.pos = 0;
+                tables.section_b.meta.tab = 'Вторая вкладка'; tables.section_b.meta.pos = 1;
                 const keysRaw = Vault.newKeys();
                 const fileObj = await Vault.seal(pw, keysRaw, Vault.splitTables(tables, 1), Vault.ITER);
                 const { repo, branch, file } = CONFIG.GITHUB;
@@ -2639,7 +2931,8 @@ saveToLocalStorage(section, data) {
                         version: '1.0',
                         title: title,
                         updated: new Date().toISOString(),
-                        owner: owner
+                        owner: owner,
+                        type: 'table'
                     },
                     columns: [
                         { id: 'col_1', width: 'medium' },
@@ -2666,14 +2959,19 @@ saveToLocalStorage(section, data) {
                 const container = document.getElementById('tables-container');
                 container.innerHTML = '';
                 if (this.state.activeTab === 'files') { container.appendChild(this._renderFilesTab()); return; }
-                const sec = this.state.activeTab === 'main' ? 'section_a' : 'section_b';
-                if (this.state.tables[sec]) {
-                    container.appendChild(this.renderTable(sec, this.state.tables[sec]));
+                const sec = this._activeSection(), t = sec && this.state.tables[sec];
+                if (t) {
+                    container.appendChild((t.meta.type || 'table') === 'text' ? this._renderTextTab(sec, t) : this.renderTable(sec, t));
                 } else {
                     const d = document.createElement('div');
                     d.style.cssText = 'padding:40px;text-align:center;color:#777;';
                     d.textContent = 'Нет доступных данных для вашего уровня.';
                     container.appendChild(d);
+                }
+                if (this._focusPara) {
+                    const el = container.querySelector('[data-pid="' + this._focusPara + '"]');
+                    if (el) el.focus();
+                    this._focusPara = null;
                 }
             },
 
@@ -2695,7 +2993,7 @@ saveToLocalStorage(section, data) {
                              contenteditable="${isEditable}" 
                              data-section="${sectionId}"
                              onblur="app.updateTableTitle(this, '${sectionId}')">
-                            ${tableData.meta.title}
+                            ${this._esc(tableData.meta.title)}
                         </div>
                         ${isLocked ? '<span class="lock-icon">🔒</span>' : '<span class="lock-icon">✏️</span>'}
                     </div>
@@ -2705,18 +3003,8 @@ saveToLocalStorage(section, data) {
                 `;
                 section.appendChild(header);
 
-                // Уровень вкладки и подсказка (только в режиме редактирования)
-                if (isEditable) {
-                    const lv = document.createElement('div');
-                    lv.style.cssText = 'margin:6px 0 2px;font-size:13px;color:#555;display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
-                    const lb = document.createElement('span'); lb.textContent = '🔒 Вкладку видят уровни до:';
-                    const hint = document.createElement('span'); hint.style.cssText = 'font-size:12px;color:#888;';
-                    hint.textContent = '1 — только админ · 2 — до редактора · 3 — до просмотра · 4 — все. Столбец слева — уровень строки.';
-                    lv.appendChild(lb);
-                    lv.appendChild(this._levelSelect(tableData.meta.lvl, (v) => this.setTabLevel(sectionId, v)));
-                    lv.appendChild(hint);
-                    section.appendChild(lv);
-                }
+                // Управление вкладкой (только в режиме редактирования)
+                if (isEditable) section.appendChild(this._tabControls(sectionId, tableData));
 
                 // Панель форматирования (только для редактируемых таблиц)
                 if (isEditable) {
@@ -2744,7 +3032,7 @@ saveToLocalStorage(section, data) {
                 tableData.columns.forEach((col, index) => {
                     const th = document.createElement('th');
                     th.textContent = `Столбец ${index + 1}`;
-                    const colWidth = col.width || 'medium';
+                    const colWidth = ['tiny', 'narrow', 'medium', 'wide', 'huge'].includes(col.width) ? col.width : 'medium';
                     th.className = `col-${colWidth}`;
                     th.dataset.colIndex = index;
                     th.dataset.section = sectionId;
@@ -2770,7 +3058,7 @@ saveToLocalStorage(section, data) {
                     tr.dataset.rowId = row.id;
                     tr.dataset.rowIndex = rowIndex;
                     tr.dataset.section = sectionId;
-                    if (row.height && row.height !== 'normal') {
+                    if (['tiny', 'small', 'large', 'huge'].includes(row.height)) {
                         tr.classList.add(`row-${row.height}`);
                     }
                     if (isEditable) {
@@ -2795,7 +3083,7 @@ saveToLocalStorage(section, data) {
                                 <span class="divider-title" 
                                       contenteditable="${isEditable}"
                                       onblur="app.updateDividerName(this, '${sectionId}', ${rowIndex})">
-                                    ${row.cells[0].text || 'Новая группа'}
+                                    ${this._esc(row.cells[0].text || 'Новая группа')}
                                 </span>
                             </div>
                         `;
@@ -2823,7 +3111,7 @@ saveToLocalStorage(section, data) {
                             // Контент ячейки
                             if (cell.link) {
                                 const link = document.createElement('a');
-                                link.href = cell.link;
+                                link.href = this._safeUrl(cell.link) || '#'; link.rel = 'noopener noreferrer';
                                 link.target = '_blank';
                                 link.textContent = cell.text || 'Ссылка';
                                 td.appendChild(link);
@@ -3128,7 +3416,7 @@ saveToLocalStorage(section, data) {
             handlePaste(e) {
                 const cd = e.clipboardData, t = e.target;
                 const sel = this.state.selectedCell;
-                if (!cd || this.state.activeTab === 'files' || !this.state.currentMode || !sel || (t && t.closest && t.closest('input,textarea,select'))) return;
+                if (!cd || !this._isTableTab() || !this.state.currentMode || !sel || (t && t.closest && t.closest('input,textarea,select'))) return;
                 const section = sel.section;
                 if (!this.canEdit(section)) return;
                 const text = cd.getData('text/plain') || '';
@@ -3327,7 +3615,9 @@ saveToLocalStorage(section, data) {
                 if (!this.state.selectedCell) return;
 
                 const { section, row, col } = this.state.selectedCell;
-                const url = document.getElementById('link-url-input').value.trim();
+                const rawUrl = document.getElementById('link-url-input').value.trim();
+                const url = rawUrl ? this._safeUrl(rawUrl) : '';
+                if (rawUrl && !url) { this.showToast('Разрешены только ссылки http(s), mailto и tel', 'error'); return; }
 
                 this.saveToHistory(section);
 
@@ -3341,7 +3631,7 @@ saveToLocalStorage(section, data) {
                     if (cell.link) {
                         td.innerHTML = '';
                         const link = document.createElement('a');
-                        link.href = cell.link;
+                        link.href = this._safeUrl(cell.link) || '#'; link.rel = 'noopener noreferrer';
                         link.target = '_blank';
                         link.textContent = cell.text || 'Ссылка';
                         td.appendChild(link);
@@ -3750,8 +4040,9 @@ saveToLocalStorage(section, data) {
 
             // ==================== ИСТОРИЯ (UNDO/REDO) ====================
             saveToHistory(section) {
-                const history = this.state.history[section];
+                const history = this._hist(section);
                 const table = this.state.tables[section];
+                if (!table) return;
 
                 // Удаляем все состояния после текущего (если были Undo)
                 history.states = history.states.slice(0, history.currentIndex + 1);
@@ -3771,7 +4062,7 @@ saveToLocalStorage(section, data) {
             },
 
             undo(section) {
-                const history = this.state.history[section];
+                const history = this._hist(section);
 
                 if (history.currentIndex <= 0) {
                     this.showToast('Нечего отменять', 'warning');
@@ -3787,7 +4078,7 @@ saveToLocalStorage(section, data) {
             },
 
             redo(section) {
-                const history = this.state.history[section];
+                const history = this._hist(section);
 
                 if (history.currentIndex >= history.states.length - 1) {
                     this.showToast('Нечего возвращать', 'warning');
@@ -3826,13 +4117,13 @@ saveToLocalStorage(section, data) {
             },
 
             hasUnsavedChanges() {
-                return this.state.unsavedChanges.section_a || this.state.unsavedChanges.section_b;
+                return Object.values(this.state.unsavedChanges).some(Boolean);
             },
 
             // ==================== GITHUB СИНХРОНИЗАЦИЯ ====================
             // Сохранить в облако — отправляет текущую секцию активной вкладки
             async saveToCloud() {
-                const section = this.state.activeTab === 'main' ? 'section_a' : 'section_b';
+                const section = (this._activeSection() || 'section_a');
                 await this.sendToGitHub(section);
             },
 
@@ -3895,7 +4186,7 @@ saveToLocalStorage(section, data) {
                 const { repo, branch, file } = CONFIG.GITHUB;
                 const st = this.state, n = st.level, rk = st.rekey;
                 const tables = {};
-                Vault.SECTIONS.forEach(sec => { if (st.tables[sec]) tables[sec] = st.tables[sec]; });
+                Object.keys(st.tables).forEach(sec => { if (st.tables[sec] && Vault.validId(sec)) tables[sec] = st.tables[sec]; });
                 Object.values(tables).forEach(t => { Vault.normalizeRows(t.rows); Vault.assignOrder(t.rows, n === 1); });
                 let fileObj;
                 if (rk) {
@@ -3928,7 +4219,7 @@ saveToLocalStorage(section, data) {
                     Object.keys(st.keys).forEach(k => { base[k] = JSON.stringify(fileObj.parts[k] || null); });
                     st.vault.baseParts = base;
                     st.baseTables = JSON.parse(JSON.stringify(tables));
-                    Vault.SECTIONS.forEach(s => { st.unsavedChanges[s] = false; });
+                    st.unsavedChanges = {};
                     this.updateUnsavedIndicator();
                     this._cacheSave({ text: text, sha: data.content.sha });
                     return 'ok';
@@ -3950,12 +4241,12 @@ saveToLocalStorage(section, data) {
                         // Кто-то менял те же части: объединяем его правки с моими по строкам и ячейкам
                         const remoteTables = Vault.mergeParts(await Vault.readParts(r.obj, st.keys));
                         const mine = {};
-                        Vault.SECTIONS.forEach(sec => {
+                        Object.keys(st.tables).forEach(sec => {
                             const t = st.tables[sec];
                             if (t) { Vault.normalizeRows(t.rows); Vault.assignOrder(t.rows, false); mine[sec] = t; }
                         });
                         const res = Vault.mergeTables(st.baseTables || {}, mine, remoteTables);
-                        Vault.SECTIONS.forEach(sec => { st.tables[sec] = res.tables[sec] || null; });
+                        st.tables = res.tables;
                         st.baseTables = JSON.parse(JSON.stringify(remoteTables));
                         this._lastMerge = { conflicts: res.conflicts };
                         this.updateTabsVisibility();
@@ -3978,7 +4269,7 @@ saveToLocalStorage(section, data) {
 
             showConflictDialog(section) {
                 this._conflictSection = section;
-                const table = this.state.tables[section] || this.state.tables.section_a || this.state.tables.section_b;
+                const table = this.state.tables[section] || Object.values(this.state.tables)[0];
                 document.getElementById('conflict-last-update').textContent = table ? this.formatDate(table.meta.updated) : '—';
                 // Сброс состояния таймера
                 document.getElementById('conflict-timer-block').style.display = 'none';
@@ -4070,7 +4361,7 @@ saveToLocalStorage(section, data) {
             },
 
             exportCurrentData() {
-                this.exportJSON(this.state.activeTab === 'main' ? 'section_a' : 'section_b');
+                this.exportJSON((this._activeSection() || 'section_a'));
                 this.closeConflictModal();
             },
 
@@ -4143,24 +4434,21 @@ saveToLocalStorage(section, data) {
                     try {
                         const data = JSON.parse(e.target.result);
                         if (data._enc || data._v) throw new Error('Это зашифрованный файл — загрузить его так нельзя');
-                        let section = null;
-                        if (data.meta && data.meta.owner === 'admin_a') section = 'section_a';
-                        else if (data.meta && data.meta.owner === 'admin_b') section = 'section_b';
-                        else throw new Error('Невозможно определить таблицу');
+                        const section = this._activeSection();
+                        if (!section || !this._isTableTab()) throw new Error('Откройте вкладку-таблицу, в которую нужно загрузить данные');
                         if (!this.canEdit(section)) throw new Error('Включите режим редактирования (нужен уровень 1 или 2)');
+                        if (!data.meta || !Array.isArray(data.rows) || !Array.isArray(data.columns)) throw new Error('Неверный формат таблицы');
+                        const old = this.state.tables[section].meta, min = this.state.level;
                         this.saveToHistory(section);
-                        const min = this.state.level;
-                        data.meta.lvl = Vault.clampLvl(Math.max(parseInt(data.meta.lvl, 10) || 4, min));
+                        // вкладка сохраняет своё имя, место и уровень доступа
+                        data.meta.lvl = old.lvl; data.meta.tab = old.tab; data.meta.pos = old.pos; data.meta.type = 'table';
                         data.rows.forEach(r => { r.lvl = Math.max(Vault.clampLvl(r.lvl), min); delete r.o; });
                         Vault.normalizeRows(data.rows);
                         this.state.tables[section] = data;
-                        const targetTab = section === 'section_a' ? 'main' : 'secondary';
-                        this.state.activeTab = targetTab;
-                        this.updateTabsVisibility();
                         this.saveChanges(section);
                         this.renderTables();
                         this.closeEmergencyModal();
-                        this.showToast('Данные загружены', 'success');
+                        this.showToast('Данные загружены в текущую вкладку', 'success');
                     } catch (error) {
                         console.error('Ошибка загрузки файла:', error);
                         this.showToast(`Ошибка: ${error.message}`, 'error');
@@ -4171,14 +4459,17 @@ saveToLocalStorage(section, data) {
 
             // ==================== ГОРЯЧИЕ КЛАВИШИ ====================
             handleKeyboard(e) {
-                if (!(e.ctrlKey || e.metaKey) || this.state.activeTab === 'files') return;
-                if (e.code === 'KeyZ') { e.preventDefault(); this.undo(); }
-                else if (e.code === 'KeyY') { e.preventDefault(); this.redo(); }
+                if (!(e.ctrlKey || e.metaKey) || this.state.activeTab === 'files' || this.state.level === null) return;
+                const editing = document.activeElement && document.activeElement.isContentEditable;   // внутри ячейки — обычная отмена ввода
+                const sec = this._activeSection();
+                if (e.code === 'KeyZ') { if (sec && !editing && this.canEdit(sec)) { e.preventDefault(); this.undo(sec); } }
+                else if (e.code === 'KeyY') { if (sec && !editing && this.canEdit(sec)) { e.preventDefault(); this.redo(sec); } }
                 else if (e.code === 'KeyC') {
+                    if (!this._isTableTab()) return;
                     // если выделен кусок текста внутри ячейки — обычное копирование
                     if (window.getSelection && String(window.getSelection())) return;
-                    const sec = this.state.selectedCell?.section || this.state.selectedCells[0]?.section;
-                    if (sec) { e.preventDefault(); this.copySelection(sec); }
+                    const s = this.state.selectedCell?.section || this.state.selectedCells[0]?.section;
+                    if (s) { e.preventDefault(); this.copySelection(s); }
                 }
                 // Ctrl+V обрабатывается событием paste (handlePaste)
             },
