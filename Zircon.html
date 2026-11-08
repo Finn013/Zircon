@@ -342,6 +342,7 @@
         }
         .data-table td { white-space: pre-wrap; }
         .data-table th, .data-table td { border-width: var(--zbw, 1px) !important; }
+        .data-table th.zsep, .data-table td.zsep { border-right: var(--zsep, 2px) solid currentColor !important; }
         .data-table.bw-thick th, .data-table.bw-thick td { border-color: #8a94a0 !important; }
         .data-table.bw-none th, .data-table.bw-none td { border-color: transparent !important; }
         .data-table.fixed-w { table-layout: fixed; }
@@ -3114,6 +3115,7 @@ saveToLocalStorage(section, data) {
                     const thPx = this.widthToPx(colWidth);
                     th.style.width = thPx;
                     th.style.minWidth = thPx;
+                    if (+col.sepR > 0) { th.classList.add('zsep'); th.style.setProperty('--zsep', Math.min(5, +col.sepR) + 'px'); }
                     
                     if (isEditable) {
                         th.addEventListener('contextmenu', (e) => this.showColumnContextMenu(e, sectionId, index));
@@ -3192,6 +3194,8 @@ saveToLocalStorage(section, data) {
                             td.className = `align-${cell.align} font-${cell.fontSize} bg-${cell.bgColor}`;
                             if (cell.bold) td.style.fontWeight = 'bold';
                             if (!isEditable) td.classList.add('readonly');
+                            const sepC = tableData.columns[colIndex];
+                            if (sepC && +sepC.sepR > 0) { td.classList.add('zsep'); td.style.setProperty('--zsep', Math.min(5, +sepC.sepR) + 'px'); }
 
                             // Контент ячейки
                             if (cell.link) {
@@ -3923,6 +3927,14 @@ saveToLocalStorage(section, data) {
                 this.saveChanges(section); this.renderTables();
                 this.showToast(nv ? `Рамка: ${nv} px` : 'Рамка скрыта', 'info');
             },
+            setColumnSep(section, colIndex, n) {
+                const table = this.state.tables[section]; if (!table || !table.columns || !table.columns[colIndex]) return;
+                this.saveToHistory(section);
+                n = Math.max(0, Math.min(5, +n || 0));
+                if (n) table.columns[colIndex].sepR = n; else delete table.columns[colIndex].sepR;
+                table.meta.updated = new Date().toISOString();
+                this.saveChanges(section); this.renderTables(); this.closeContextMenu();
+            },
             toggleTableFit(section) {
                 const table = this.state.tables[section]; if (!table) return;
                 this.saveToHistory(section);
@@ -4118,6 +4130,13 @@ saveToLocalStorage(section, data) {
                     </div>
                     <div class="context-menu-item" onclick="app.setColumnWidth('${section}', ${colIndex}, 'huge')" style="padding-left: 30px;">
                         Огромный (450px)
+                    </div>
+                    <div class="context-menu-divider"></div>
+                    <div class="context-menu-item">
+                        ┃ Разделитель справа:
+                    </div>
+                    <div class="context-menu-item" style="padding-left: 30px; display:flex; gap:6px; flex-wrap:wrap;">
+                        ${[0,1,2,3,4,5].map(n => { const cur = +((this.state.tables[section].columns[colIndex] || {}).sepR || 0); return `<button type="button" class="btn" style="min-width:34px;padding:4px 8px;${cur === n ? 'outline:2px solid var(--accent);font-weight:bold;' : ''}" onclick="app.setColumnSep('${section}', ${colIndex}, ${n})">${n === 0 ? 'нет' : n}</button>`; }).join('')}
                     </div>
                     <div class="context-menu-divider"></div>
                     <div class="context-menu-item" onclick="app.toggleTableFit('${section}')">
